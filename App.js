@@ -1,21 +1,135 @@
 import React, { Component } from 'react';
-import { StyleSheet, Text, View, StatusBar, TextInput, Dimensions, Platform, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, StatusBar, TextInput, Dimensions, Platform, ScrollView, AsyncStorage} from 'react-native';
+import { AppLoading } from 'expo';
 import Todo from './Todo'
+import uuidv1 from 'uuid/v1'
 
 const { width, height } = Dimensions.get("window");
 
 export default class App extends Component {
   state = {
-    newTodo: ''
+    newTodo: '',
+    isTodoLoaded: false,
+    todos: {}
   }
-  _addTodo = text => {
+  _controllNewTodo = text => {
     this.setState({
-      newTodo: text
+      newTodo: text,
+    })
+  }
+  _loadTodo = async () => {
+    try {
+      const todos = await AsyncStorage.getItem('todos');
+      const parsedTodos = JSON.parse(todos);
+      this.setState({ isTodoLoaded: true, todos: parsedTodos || {} });
+
+    } catch(err) {
+      console.log(err)
+    }
+    this.setState({
+      isTodoLoaded: true
+    })
+  }
+  _addTodo = () => {
+    const { newTodo } = this.state;
+    if(newTodo !== '') {
+      this.setState(prevState => {
+        const ID = uuidv1();
+        const  newTodoObject = {
+          [ID]: {
+            id: ID,
+            isCompleted: false,
+            text: newTodo,
+            createdAt: Date.now()
+          }
+        }
+        const newState = {
+          ...prevState,
+          newTodo: '',
+          todos: {
+            ...prevState.todos,
+            ...newTodoObject
+          }
+        }
+        this._saveTodo(newState.todos);
+        return { ...newState };
+      })
+    }
+  }
+  _deleteTodo = (id) => {
+    this.setState(prevState => {
+      const allTodo = prevState.todos;
+      delete allTodo[id];
+      const newState = {
+        ...prevState,
+        ...allTodo
+      }
+      this._saveTodo(newState.todos);
+      return {...newState};
     })
   }
 
+  _uncompleteTodo = (id) => {
+    this.setState(prevState => {
+      const newState = {
+        ...prevState,
+        todos: {
+          ...prevState.todos,
+          [id]: {
+            ...prevState.todos[id],
+            isCompleted: false
+          }
+        }
+      }
+      this._saveTodo(newState.todos);
+      return {...newState};
+    })
+  }
+  _completeTodo = (id) => {
+    this.setState(prevState => {
+      const newState = {
+        ...prevState,
+        todos: {
+          ...prevState.todos,
+          [id]: {
+            ...prevState.todos[id],
+            isCompleted: true
+          }
+        }
+      }
+      this._saveTodo(newState.todos);
+      return {...newState};
+    })
+  }
+  _updateTodo = (id, text) => {
+    this.setState(prevState => {
+      const newState = {
+        ...prevState,
+        todos: {
+          ...prevState.todos,
+          [id]: {
+            ...prevState.todos[id],
+            text: text
+          }
+        }
+      }
+      this._saveTodo(newState.todos);
+      return {...newState};
+    })
+  }
+  _saveTodo = (newTodos) => {
+    const saveTodos = AsyncStorage.setItem('todos', JSON.stringify(newTodos));
+  }
+
+  componentDidMount = () => {
+    this._loadTodo();
+  }
+
   render() {
-    const { newTodo } = this.state;
+    const { newTodo, isTodoLoaded, todos } = this.state;
+    if(!isTodoLoaded) {
+      return <AppLoading />
+    }
     return (
       <View style={styles.container}>
         <StatusBar barStyle="light-content"/>
@@ -25,12 +139,23 @@ export default class App extends Component {
             style={styles.input}
             placeholder={"Input what to do"}
             value={newTodo}
-            onChangeText={this._addTodo}
+            onChangeText={this._controllNewTodo}
             placeholderTextColor={"#999"}
             autoCorrect={false}
+            onSubmitEditing={this._addTodo}
+            underlineColorAndroid={"transparent"}
           />
           <ScrollView contentContainerStyle={styles.list}>
-            <Todo />
+            {Object.values(todos).reverse().map(todo =>
+              <Todo
+                key={todo.id}
+                {...todo}
+                deleteTodo={this._deleteTodo}
+                uncompleteTodo={this._uncompleteTodo}
+                completeTodo={this._completeTodo}
+                updateTodo={this._updateTodo}
+              />
+            )}
           </ScrollView>
         </View>
       </View>
